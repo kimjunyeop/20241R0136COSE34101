@@ -1,0 +1,512 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+#define MAX 10 // 프로세스의 최대 개수
+#define NUM_ALGOS 6 // 스케줄링 알고리즘의 개수
+
+typedef struct{
+    int pid;
+    int arrival;
+    int cpu_burst;
+    int priority;
+    int io_burst;
+} process;
+
+process original_processes[MAX];
+process processes[MAX];
+
+int process_num; // 프로세스 수
+char *algo_names[NUM_ALGOS+1] = {"FCFS", "SJF", "Priority(larger number = larger priority)", "RR", \
+"preemptive SJF", "preemptive Priority", "Exit"};
+
+int waiting_time[NUM_ALGOS], turnaround_time[NUM_ALGOS];
+
+void Create_Process(void);
+void Schedule(void);
+void copy_process(void); // original processes의 내용을 processes로 복사
+void display_gantt_chart(int start, int end, int idx);
+
+void FCFS(void);
+void nonpreeptive_SJF(void);
+void nonpreeptive_Priority(void);
+void RR(void);
+void preemptive_SJF(void);
+void preemptive_Priority(void);
+
+void Evaluation(void); // 알고리즘 성능 평가
+
+int main(){
+
+    Create_Process();
+    Schedule();
+    Evaluation();
+
+    return 0;
+}
+
+void Create_Process(void){
+    char answer;
+
+    printf("Enter the number of processes(1~%d): ", MAX);
+    scanf("%d", &process_num);
+
+    for(int i=0; i<process_num; i++){
+        printf("Enter ID of %dth process: ", i+1);
+        scanf("%d", &original_processes[i].pid);
+    }
+
+    while (getchar() != '\n');
+
+    printf("Random creation? Y/N: ");
+    scanf("%c", &answer);
+
+    while (answer != 'Y' && answer != 'N'){
+        while (getchar() != '\n');
+        printf("Wrong input!\n");
+        scanf("%c", &answer);
+    }
+
+    if(answer == 'Y'){
+        srand(time(NULL));
+
+        for(int i=0; i<process_num; i++){
+            original_processes[i].arrival = (rand()%20);
+            original_processes[i].cpu_burst = (rand()%15)+1;
+            original_processes[i].priority = (rand()%process_num)+1;
+            original_processes[i].io_burst = (rand()%5);
+        }
+
+        printf("\n(arrival time / cpu burst time / priority / io burst time)\n");
+
+        for(int i=0; i<process_num; i++)
+            printf("[process %d]: (%d / %d / %d / %d)\n", 
+            original_processes[i].pid,
+            original_processes[i].arrival,
+            original_processes[i].cpu_burst, original_processes[i].priority,
+            original_processes[i].io_burst);
+    }
+
+    else if(answer == 'N'){
+        for(int i=0; i<process_num; i++){
+            printf("Enter arrival time, cpu burst time, priority, io burst time for [process %d]: ", original_processes[i].pid);
+            scanf("%d %d %d %d",
+            &original_processes[i].arrival,
+            &original_processes[i].cpu_burst,
+            &original_processes[i].priority,
+            &original_processes[i].io_burst);
+        }
+    }
+}
+
+void Schedule(void){
+    int answer;
+
+    while(1){
+        printf("\nwhich scheduling?\n");
+
+        for(int i=0; i<NUM_ALGOS+1; i++)
+            printf("%d. %s / ", i+1, algo_names[i]);
+        
+        scanf("%d", &answer);
+
+        if(answer == NUM_ALGOS+1) break;
+
+        copy_process();
+
+        printf("\n---%s start---\n", algo_names[answer-1]);
+
+        switch (answer)
+        {
+        case 1:
+            FCFS();
+            break;
+        case 2:
+            nonpreeptive_SJF();
+            break;
+        case 3:
+            nonpreeptive_Priority();
+            break;
+        case 4:
+            RR();
+            break;
+        case 5:
+            preemptive_SJF();
+            break;
+        case 6:
+            preemptive_Priority();
+            break;
+        default:
+            break;
+        }
+        printf("---%s end---\n", algo_names[answer-1]);
+    }
+}
+
+void copy_process(void){
+    for(int i=0; i<process_num; i++)
+        processes[i] = original_processes[i];
+}
+
+
+void display_gantt_chart(int start, int end, int is_neg_idle){
+    
+    printf("%d~%d: ", start, end);
+
+    if(is_neg_idle == -1)
+        printf("IDLE\n");
+    else 
+        printf("[process %d] used CPU\n", original_processes[is_neg_idle].pid);
+}
+
+void FCFS(void){
+    int time = 0;
+    int finished = 0; // 완료된 프로세스의 수
+
+    waiting_time[0] = 0;
+    turnaround_time[0] = 0;
+
+    while(finished < process_num){
+        int idx = -1;
+        
+        for(int i=0; i<process_num; i++){
+            
+            // cpu_burst가 0이 아닌 프로세스 중 도착시간이 가장 빠른 프로세스를 idx에 저장
+            if(processes[i].cpu_burst != 0){
+                if(idx == -1 || processes[i].arrival < processes[idx].arrival)
+                    idx = i;
+            }
+        }
+
+        // 프로세스가 time 이후에 도착한다면, 도착시간과 time 사이의 시간을 idle해준다.
+        if(processes[idx].arrival > time){
+            display_gantt_chart(time, processes[idx].arrival, -1);
+            time = processes[idx].arrival;
+        }
+
+        display_gantt_chart(time, time + processes[idx].cpu_burst, idx);
+
+        waiting_time[0] += (time - processes[idx].arrival);
+        turnaround_time[0] += (time + processes[idx].cpu_burst - processes[idx].arrival);
+
+        time += processes[idx].cpu_burst;
+        processes[idx].cpu_burst = 0;
+        finished++;
+    }
+}
+
+void nonpreeptive_SJF(void){
+    int time = 0;
+    int finished = 0;
+
+    waiting_time[1] = 0;
+    turnaround_time[1] = 0;
+
+    while(finished < process_num){
+        int idx = -1;
+
+        // cpu_burst가 0이 아니고 도착해 있는 프로세스 중 작업시간이 가장 짧은 프로세스를 idx에 저장
+        for(int i=0; i<process_num; i++){
+            if(processes[i].cpu_burst != 0 && processes[i].arrival <= time)
+                if(idx == -1 || processes[i].cpu_burst < processes[idx].cpu_burst || (processes[i].cpu_burst == processes[idx].cpu_burst && processes[i].arrival < processes[idx].arrival))
+                    idx = i;
+        }
+        
+        // 도착한 프로세스가 없을 경우, 가장 빨리 도착하는 프로세스 탐색
+        if(idx == -1){
+            for(int i=0; i<process_num; i++){
+                if (processes[i].cpu_burst != 0){
+                    if(idx == -1 || processes[i].arrival < processes[idx].arrival || (processes[i].arrival == processes[idx].arrival && processes[i].cpu_burst < processes[idx].cpu_burst))
+                        idx = i;
+                }
+            }
+
+            display_gantt_chart(time, processes[idx].arrival, -1);
+            time = processes[idx].arrival;
+        }
+
+        display_gantt_chart(time, time + processes[idx].cpu_burst, idx);
+
+        waiting_time[1] += (time - processes[idx].arrival);
+        turnaround_time[1] += (time - processes[idx].arrival + processes[idx].cpu_burst);
+
+        time += processes[idx].cpu_burst;
+        processes[idx].cpu_burst = 0;
+        finished++;
+    }
+}
+
+void nonpreeptive_Priority(void){
+    int time = 0;
+    int finished = 0;
+
+    waiting_time[2] = 0;
+    turnaround_time[2] = 0;
+
+    while(finished < process_num){
+        int idx = -1;
+
+        for(int i=0; i<process_num; i++){
+            if(processes[i].cpu_burst != 0 && processes[i].arrival <= time){
+                if(idx == -1 || processes[i].priority > processes[idx].priority || (processes[i].priority == processes[idx].priority && processes[i].arrival < processes[idx].arrival))
+                    idx = i;
+            }
+        }
+        
+        if(idx == -1){
+            for(int i=0; i<process_num; i++){
+                if(processes[i].cpu_burst != 0){
+                    if(idx == -1 || processes[i].arrival < processes[idx].arrival || (processes[i].arrival == processes[idx].arrival && processes[i].priority > processes[idx].priority))
+                        idx = i;
+                }
+            }
+
+            display_gantt_chart(time, processes[idx].arrival, -1);
+            time = processes[idx].arrival;
+        }
+
+        display_gantt_chart(time, time + processes[idx].cpu_burst, idx);
+
+        waiting_time[2] += (time - processes[idx].arrival);
+        turnaround_time[2] += (time - processes[idx].arrival + processes[idx].cpu_burst);
+
+        time += processes[idx].cpu_burst;
+        processes[idx].cpu_burst = 0;
+        finished++;
+    }
+}
+
+void RR(void){
+    int time = 0;
+    int finished = 0;
+    int quantum = 0;
+
+    waiting_time[3] = 0;
+    turnaround_time[3] = 0;
+
+    printf("quantum: ");
+    scanf("%d", &quantum);
+
+    while(finished < process_num){
+        int idx = -1;
+        
+        for(int i=0; i<process_num; i++){
+            if(processes[i].cpu_burst != 0){
+                if(idx == -1 || processes[i].arrival < processes[idx].arrival)
+                    idx = i;
+            }
+        }
+
+        if(processes[idx].arrival > time){
+            display_gantt_chart(time, processes[idx].arrival, -1);
+            time = processes[idx].arrival;
+        }
+
+        waiting_time[3] += (time - processes[idx].arrival);
+
+        if(processes[idx].cpu_burst <= quantum){
+            turnaround_time[3] += (time + processes[idx].cpu_burst - processes[idx].arrival);
+            
+            display_gantt_chart(time, time + processes[idx].cpu_burst, idx);
+            time += processes[idx].cpu_burst;
+            processes[idx].cpu_burst = 0;
+            finished++;
+        }
+        else{
+            turnaround_time[3] += (time - processes[idx].arrival + quantum);
+
+            display_gantt_chart(time, time + quantum, idx);
+            time += quantum;
+            processes[idx].cpu_burst -= quantum;
+            processes[idx].arrival = time;
+        }
+    }
+}
+
+void preemptive_SJF(void){
+    int time = 0;
+    int finished = 0;
+
+    int cur_idx = -1;
+    int cur_time = 0;
+
+    waiting_time[4] = 0;
+    turnaround_time[4] = 0;
+
+    while(finished < process_num){
+
+        // 도착시간이 time보다 빠른 프로세스 중에서, 현재 점유중인 프로세스보다 cpu burst가 짧은 프로세스를 next에 대입
+        int idx = -1;
+        for(int i=0; i<process_num; i++){
+
+            if(i == cur_idx || processes[i].cpu_burst == 0 || processes[i].arrival > time)
+                continue;
+
+            if(idx >= 0){
+                if(processes[i].cpu_burst < processes[idx].cpu_burst || (processes[i].cpu_burst == processes[idx].cpu_burst && processes[i].arrival < processes[idx].arrival))
+                    idx = i;
+            }
+
+            else if(cur_idx >= 0){
+                if(processes[i].cpu_burst < processes[cur_idx].cpu_burst)
+                    idx = i;
+            }
+
+            else{
+                idx = i;
+            }
+        }
+
+        int next = idx;
+
+        if(next >= 0){
+            if(cur_idx >= 0){
+                display_gantt_chart(cur_time, time, cur_idx);
+                processes[cur_idx].arrival = time;
+            }
+            else{
+                if(cur_time != time)
+                    display_gantt_chart(cur_time, time, -1);
+            }
+
+            waiting_time[4] += (time - processes[next].arrival);
+            turnaround_time[4] += (time - processes[next].arrival);
+
+            cur_idx = next;
+            cur_time = time;
+        }
+
+        time++;
+
+        if(cur_idx >= 0){
+            turnaround_time[4]++;
+            processes[cur_idx].cpu_burst--;
+
+            if(processes[cur_idx].cpu_burst == 0){
+                display_gantt_chart(cur_time, time, cur_idx);
+                cur_idx = -1;
+                cur_time = time;
+                finished++;
+            }
+        }
+    }
+}
+
+void preemptive_Priority(void){
+    int time = 0;
+    int finished = 0;
+
+    int cur_idx = -1;
+    int cur_time = 0;
+
+    waiting_time[5] = 0;
+    turnaround_time[5] = 0;
+
+    while(finished < process_num){
+
+        int idx = -1;
+
+        for(int i=0; i<process_num; i++){
+            if(i == cur_idx || processes[i].cpu_burst == 0 || processes[i].arrival > time) continue;
+
+            if(idx >= 0){ 
+                if(processes[i].priority > processes[idx].priority || (processes[i].priority == processes[idx].priority && processes[i].arrival < processes[idx].arrival))
+                    idx = i;
+            }
+
+            else if(cur_idx >= 0){
+                if(processes[i].priority > processes[cur_idx].priority)
+                    idx = i;
+            }
+
+            else{
+                idx = i;
+            }
+        }
+
+        int next = idx;
+
+        if(next >= 0){
+            if(cur_idx >= 0){
+                display_gantt_chart(cur_time, time, cur_idx);
+                processes[cur_idx].arrival = time;
+            }
+            else{
+                if(cur_time != time)
+                    display_gantt_chart(cur_time, time, -1);
+            }
+        
+
+            waiting_time[5] += (time - processes[next].arrival);
+            turnaround_time[5] += (time - processes[next].arrival);
+
+            cur_idx = next;
+            cur_time = time;
+        }
+
+        time++;
+
+        if(cur_idx >= 0){
+            processes[cur_idx].cpu_burst--;
+            turnaround_time[5] += 1;
+
+            if(processes[cur_idx].cpu_burst == 0){
+                display_gantt_chart(cur_time, time, cur_idx);
+                cur_idx = -1;
+                cur_time = time;
+                finished++;
+            }
+        }
+    }
+}
+
+
+void Evaluation(void) {
+    int min_wait_idx[NUM_ALGOS], min_turn_idx[NUM_ALGOS]; // 최소 waiting time과 turnaround time의 인덱스를 저장하는 배열
+    int min_wait_count = 0, min_turn_count = 0; // 최소 값을 가진 인덱스의 개수를 카운트
+
+    printf("\nAlgorithm: Average waiting time, turnaround time\n");
+
+    for (int i = 0; i < NUM_ALGOS; i++) {
+        float avg_wait, avg_turn;
+
+        if (turnaround_time[i] == 0) continue;
+
+        avg_wait = (float)waiting_time[i] / process_num;
+        avg_turn = (float)turnaround_time[i] / process_num;
+
+        printf("%d. %s: %.2f, %.2f\n", i + 1, algo_names[i], avg_wait, avg_turn);
+
+        if (min_wait_count == 0 || waiting_time[i] < waiting_time[min_wait_idx[0]]) {
+            min_wait_idx[0] = i;
+            min_wait_count = 1;
+        } else if (waiting_time[i] == waiting_time[min_wait_idx[0]]) {
+            min_wait_idx[min_wait_count++] = i;
+        }
+
+        if (min_turn_count == 0 || turnaround_time[i] < turnaround_time[min_turn_idx[0]]) {
+            min_turn_idx[0] = i;
+            min_turn_count = 1;
+        } else if (turnaround_time[i] == turnaround_time[min_turn_idx[0]]) {
+            min_turn_idx[min_turn_count++] = i;
+        }
+    }
+
+    if (min_wait_count > 0) {
+        printf("\nAlgorithms with minimum waiting time are:");
+        for (int i = 0; i < min_wait_count; i++) {
+            printf(" %s", algo_names[min_wait_idx[i]]);
+            if (i < min_wait_count - 1) printf(",");
+        }
+        printf("\n");
+
+        printf("Algorithms with minimum turnaround time are:");
+        for (int i = 0; i < min_turn_count; i++) {
+            printf(" %s", algo_names[min_turn_idx[i]]);
+            if (i < min_turn_count - 1) printf(",");
+        }
+        printf("\n");
+    } else {
+        printf("No data\n");
+    }
+}
